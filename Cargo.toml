@@ -1,0 +1,13 @@
+[package]
+name = "thermocam"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+clap = { version = "4.0", features = ["derive"] }
+npyz = "0.7"
+image = "0.24"
+mlx9064x = "0.2"
+linux-embedded-hal = { version = "0.3", features = ["gpio_cdev"] }
