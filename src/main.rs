@@ -9,15 +9,17 @@ use mlx9064x::Mlx90640Driver;
 use std::thread::sleep;
 use std::time::Duration;
 
+// use raspicam::image::camera_operations::click_image;
+// use raspicam::image::settings::{CameraSettings, ImageSettings};
+// use std::io::Error;
+// use std::process::Output;
+
 mod color;
 use color::Color;
 
-#[derive(Debug)]
-struct Pixel {
-    x: u32,
-    y: u32,
-    value: f32,
-}
+mod pixel;
+use pixel::Pixel;
+
 
 fn main() -> std::io::Result<()> {
     const INTERPOLATION_FACTOR: u32 = 6;
@@ -52,63 +54,63 @@ fn main() -> std::io::Result<()> {
         let i2c_bus = I2cdev::new("/dev/i2c-1").expect("/dev/i2c-1 needs to be an I2C controller");
         // Default address for these cameras is 0x33
         let mut sensor = Mlx90640Driver::new(i2c_bus, 0x33).unwrap();
-        sensor.set_frame_rate(mlx9064x::FrameRate::Half).unwrap();
+
+        let frame_rate_in = mlx9064x::FrameRate::Four;
+        let frame_rate: f32 = frame_rate_in.into();
+        let period = ((1.0 / frame_rate) * 1000.0) as u64;
+        println!("FPS: {:?} ({:?} ms)", frame_rate, period);
+        sensor.set_frame_rate(frame_rate_in).unwrap();
         sensor
             .set_access_pattern(mlx9064x::AccessPattern::Interleave)
             .unwrap();
         // A buffer for storing the temperature "image"
         shape = (sensor.height() as u32, sensor.width() as u32);
         mlx_sensor_data = vec![0f32; sensor.height() * sensor.width()];
-        sleep(Duration::from_millis(1000));
-        for _ in 0..2 {
-            while !sensor
-                .generate_image_if_ready(&mut mlx_sensor_data)
-                .unwrap()
-            {
-                sleep(Duration::from_millis(50));
-            }
-            sleep(Duration::from_millis(500));
-        }
+        sensor.synchronize().unwrap();
+
+        sensor.generate_image_if_ready(&mut mlx_sensor_data).unwrap();
+        sleep(Duration::from_millis(period));
+        sensor.generate_image_if_ready(&mut mlx_sensor_data).unwrap();
+        
+        println!(
+            "Ambient temperature: {:?}°C",
+            sensor.ambient_temperature().unwrap()
+        );
     }
 
+    let mut mean_temperature = 0.0;
     for (i, &temp_in_celsius) in mlx_sensor_data.iter().enumerate() {
         let row = i as u32 / shape.1;
         let col = i as u32 % shape.1;
 
-        let mut corrected_temp_in_celsius = temp_in_celsius;
-        if corrected_temp_in_celsius < -40.0 {
-            corrected_temp_in_celsius = 21.0;
-        }
-
-        if corrected_temp_in_celsius <= min_pixel.value {
-            min_pixel.value = corrected_temp_in_celsius;
+        if temp_in_celsius <= min_pixel.value {
+            min_pixel.value = temp_in_celsius;
             min_pixel.x = col;
             min_pixel.y = row;
         }
-        if corrected_temp_in_celsius >= max_pixel.value {
-            max_pixel.value = corrected_temp_in_celsius;
+        if temp_in_celsius >= max_pixel.value {
+            max_pixel.value = temp_in_celsius;
             max_pixel.x = col;
             max_pixel.y = row;
         }
+        mean_temperature += temp_in_celsius;
     }
+    mean_temperature /= mlx_sensor_data.len() as f32;
 
     for &temp_in_celsius in mlx_sensor_data.iter() {
-        let mut corrected_temp_in_celsius = temp_in_celsius;
-        if corrected_temp_in_celsius < -40.0 {
-            corrected_temp_in_celsius = 21.0;
-        }
-
-        let fraction;
+        let min_temp;
+        let max_temp;
         if deactivate_autoscale {
-            fraction = normalize(MIN_TEMP, MAX_TEMP, corrected_temp_in_celsius);
+            min_temp = MIN_TEMP;
+            max_temp = MAX_TEMP;
         } else {
-            fraction = normalize(min_pixel.value, max_pixel.value, corrected_temp_in_celsius);
+            min_temp = min_pixel.value;
+            max_temp = max_pixel.value;
         }
 
+        let fraction = normalize(min_temp, max_temp, temp_in_celsius);
         let interpolated_color = Color::lerp(MIN_TEMP_COLOR, MAX_TEMP_COLOR, fraction);
-        img_vec.push(interpolated_color.r);
-        img_vec.push(interpolated_color.g);
-        img_vec.push(interpolated_color.b);
+        img_vec.extend(interpolated_color.to_vec());
     }
 
     let img = image::RgbImage::from_raw(shape.1, shape.0, img_vec).unwrap();
@@ -121,13 +123,40 @@ fn main() -> std::io::Result<()> {
         FilterType::Lanczos3,
     );
 
+    let col_buf = Color::discrete_blend(MIN_TEMP_COLOR, MAX_TEMP_COLOR, 100);
+    let mut buf: Vec<u8> = Vec::new();
+    for c in col_buf {
+        buf.extend(c.to_vec());
+    }
+    let scale_img = image::RgbImage::from_raw(1, 100, buf).unwrap();
+    let scale_upscaled_img = image::imageops::resize(
+        &scale_img,
+        10,
+        img.height(),
+        FilterType::Nearest,
+    );
+
+    // let mut camera_settings: CameraSettings = CameraSettings::default();
+    // camera_settings.output = "image.jpg";
+
+    // // Initialize image settings with their default values.
+    // let image_settings: ImageSettings = ImageSettings::default();
+
+    // // Capture image using RaspberryPi's camera function.
+    // let result: Result<Output, Error> = click_image(camera_settings, image_settings);
+
+    // // Print the resultant output or check the clicked image in the default path[~/raspicam.jpg].
+    // println!("{:?}", result);
+
     img.save("output/converted.png").unwrap();
+    scale_upscaled_img.save("output/scale_upscaled_img.png").unwrap();
     upscaled_image
         .save("output/converted_upscaled.png")
         .unwrap();
 
-    println!("{:?}", min_pixel);
-    println!("{:?}", max_pixel);
+    println!("Min Pixel {:?}:", min_pixel);
+    println!("Max Pixel {:?}:", max_pixel);
+    println!("Mean Temp {:?}:", mean_temperature);
 
     Ok(())
 }

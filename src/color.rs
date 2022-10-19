@@ -1,5 +1,5 @@
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Color {
     pub r: u8,
     pub g: u8,
@@ -27,5 +27,16 @@ impl Color {
             g: g as u8,
             b: b as u8,
         }
+    }
+    pub fn discrete_blend(color1: Self, color2: Self, steps: u32) -> Vec<Self>{
+        let mut color_vec: Vec<Self> = Vec::new();
+        for step in 0..steps {
+            let fraction = step as f32 / steps as f32;
+            color_vec.push(Self::lerp(color1, color2, fraction))
+        }
+        color_vec
+    }
+    pub fn to_vec(self) -> Vec<u8> {
+        vec![self.r, self.g, self.b]
     }
 }

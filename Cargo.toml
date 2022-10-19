@@ -11,3 +11,4 @@ npyz = "0.7"
 image = "0.24"
 mlx9064x = "0.2"
 linux-embedded-hal = { version = "0.3", features = ["gpio_cdev"] }
+#  raspicam = "0.1.0"
