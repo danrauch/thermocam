@@ -1,12 +1,11 @@
-
 #[derive(Debug, Clone, Copy)]
-pub struct Color {
+pub struct RgbColor {
     pub r: u8,
     pub g: u8,
     pub b: u8,
 }
 
-impl Color {
+impl RgbColor {
     pub fn lerp(color1: Self, color2: Self, fraction: f32) -> Self {
         if fraction < 0.0 {
             return color1;
@@ -22,13 +21,13 @@ impl Color {
         let g = (color2_f.1 - color1_f.1) * fraction + color1_f.1;
         let b = (color2_f.2 - color1_f.2) * fraction + color1_f.2;
 
-        Color {
+        RgbColor {
             r: r as u8,
             g: g as u8,
             b: b as u8,
         }
     }
-    pub fn discrete_blend(color1: Self, color2: Self, steps: u32) -> Vec<Self>{
+    pub fn discrete_blend(color1: Self, color2: Self, steps: u32) -> Vec<Self> {
         let mut color_vec: Vec<Self> = Vec::new();
         for step in 0..steps {
             let fraction = step as f32 / steps as f32;

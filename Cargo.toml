@@ -2,6 +2,7 @@
 name = "thermocam"
 version = "0.1.0"
 edition = "2021"
+build = "build.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -11,4 +12,7 @@ npyz = "0.7"
 image = "0.24"
 mlx9064x = "0.2"
 linux-embedded-hal = { version = "0.3", features = ["gpio_cdev"] }
-#  raspicam = "0.1.0"
+slint = "0.3.0"
+
+[build-dependencies]
+slint-build = "0.3.0"

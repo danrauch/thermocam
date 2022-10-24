@@ -1,0 +1,56 @@
+MainWindow := Window {
+    width: 320px;
+    height: 240px;
+
+    property thermo_image <=> thermo_image.source;
+    property scale_image <=> scale_image.source;
+    
+    property max_temp_text <=> max_temp_text.text;
+    property mean_temp_text <=> mean_temp_text.text;
+    property min_temp_text <=> min_temp_text.text;
+
+    property lower_scale_temp_text <=> lower_scale_temp_text.text;
+    property upper_scale_temp_text <=> upper_scale_temp_text.text;
+
+    VerticalLayout { 
+        HorizontalLayout { 
+            thermo_image := Image {
+                padding-left: 5px;
+            }  // expected size: 256x192
+            VerticalLayout { 
+                lower_scale_temp_text := Text {
+                    vertical-alignment: TextVerticalAlignment.center;
+                    horizontal-alignment: TextHorizontalAlignment.center;
+                }
+                scale_image := Image{}
+                upper_scale_temp_text := Text {
+                    vertical-alignment: TextVerticalAlignment.center;
+                    horizontal-alignment: TextHorizontalAlignment.center;
+                }
+
+             }
+        }
+        Rectangle { 
+            x: 5px;
+            width: 310px;
+            height: 1px;
+            background: black;
+
+         }
+        HorizontalLayout { 
+            min_temp_text := Text {
+                vertical-alignment: TextVerticalAlignment.center;
+                horizontal-alignment: TextHorizontalAlignment.center;
+            }
+            mean_temp_text := Text {
+                vertical-alignment: TextVerticalAlignment.center;
+                horizontal-alignment: TextHorizontalAlignment.center;
+            }
+            max_temp_text := Text {
+                vertical-alignment: TextVerticalAlignment.center;
+                horizontal-alignment: TextHorizontalAlignment.center;
+            }
+         }
+     }
+
+}
