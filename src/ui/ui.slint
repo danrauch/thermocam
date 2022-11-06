@@ -1,6 +1,8 @@
+import { Button }  from "std-widgets.slint";
+
 MainWindow := Window {
-    width: 320px;
-    height: 240px;
+    width: 480px;
+    height: 320px;
 
     property thermo_image <=> thermo_image.source;
     property scale_image <=> scale_image.source;
@@ -11,46 +13,84 @@ MainWindow := Window {
 
     property lower_scale_temp_text <=> lower_scale_temp_text.text;
     property upper_scale_temp_text <=> upper_scale_temp_text.text;
+    
+    callback autoscale-toggled(bool);
+    callback manual-scale-max-temp-increased();
+    callback manual-scale-max-temp-decreased();
+    callback manual-scale-min-temp-increased();
+    callback manual-scale-min-temp-decreased();
 
-    VerticalLayout { 
-        HorizontalLayout { 
-            thermo_image := Image {
-                padding-left: 5px;
-            }  // expected size: 256x192
-            VerticalLayout { 
-                lower_scale_temp_text := Text {
+    HorizontalLayout {
+        VerticalLayout { 
+            HorizontalLayout { 
+                thermo_image := Image {
+                    padding-left: 5px;
+                }  // expected size: 256x192
+                VerticalLayout { 
+                    lower_scale_temp_text := Text {
+                        vertical-alignment: TextVerticalAlignment.center;
+                        horizontal-alignment: TextHorizontalAlignment.center;
+                    }
+                    scale_image := Image{}
+                    upper_scale_temp_text := Text {
+                        vertical-alignment: TextVerticalAlignment.center;
+                        horizontal-alignment: TextHorizontalAlignment.center;
+                    }
+                }
+            }
+            Rectangle { 
+                x: 5px;
+                width: 310px;
+                height: 1px;
+                background: black;
+
+            }
+            HorizontalLayout { 
+                min_temp_text := Text {
                     vertical-alignment: TextVerticalAlignment.center;
                     horizontal-alignment: TextHorizontalAlignment.center;
                 }
-                scale_image := Image{}
-                upper_scale_temp_text := Text {
+                mean_temp_text := Text {
                     vertical-alignment: TextVerticalAlignment.center;
                     horizontal-alignment: TextHorizontalAlignment.center;
                 }
-
-             }
+                max_temp_text := Text {
+                    vertical-alignment: TextVerticalAlignment.center;
+                    horizontal-alignment: TextHorizontalAlignment.center;
+                }
+            }
         }
-        Rectangle { 
-            x: 5px;
-            width: 310px;
-            height: 1px;
-            background: black;
-
-         }
-        HorizontalLayout { 
-            min_temp_text := Text {
-                vertical-alignment: TextVerticalAlignment.center;
-                horizontal-alignment: TextHorizontalAlignment.center;
+        VerticalLayout { 
+            autoscale_button := Button { 
+                text: "Autoscale";
+                checked: true;
+                checkable: true;
+                clicked => { autoscale-toggled(self.checked) }
             }
-            mean_temp_text := Text {
-                vertical-alignment: TextVerticalAlignment.center;
-                horizontal-alignment: TextHorizontalAlignment.center;
+            HorizontalLayout {
+                Button {
+                    enabled: !autoscale_button.checked;
+                    text: "Min -";
+                    clicked => { manual-scale-min-temp-decreased() }
+                }
+                Button {
+                    enabled: !autoscale_button.checked;
+                    text: "Min +";
+                    clicked => { manual-scale-min-temp-increased() }
+                }                
             }
-            max_temp_text := Text {
-                vertical-alignment: TextVerticalAlignment.center;
-                horizontal-alignment: TextHorizontalAlignment.center;
+            HorizontalLayout { 
+                Button { 
+                    enabled: !autoscale_button.checked;
+                    text: "Max -";
+                    clicked => { manual-scale-max-temp-decreased() }
+                }   
+                Button { 
+                    enabled: !autoscale_button.checked;
+                    text: "Max +";
+                    clicked => { manual-scale-max-temp-increased() }
+                }                
             }
-         }
-     }
-
+        }
+    }
 }

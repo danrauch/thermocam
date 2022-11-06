@@ -1,2 +1,11 @@
+# Pi 0/1
+[target.arm-unknown-linux-gnueabihf]
+linker = "arm-linux-gnueabihf-gcc"
+
+# Pi 2/3/4 (32-bit)
+[target.armv7-unknown-linux-gnueabihf]
+linker = "arm-none-linux-gnueabihf-gcc"
+
+# Pi 3/4 (64-bit)
 [target.aarch64-unknown-linux-gnu]
 linker = "aarch64-none-linux-gnu-gcc"
