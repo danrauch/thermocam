@@ -3,6 +3,8 @@ pub mod temperature_pixel;
 
 use image;
 use image::imageops::FilterType;
+
+#[cfg(not(target_arch = "arm"))]
 use npyz;
 
 use linux_embedded_hal::I2cdev;
@@ -14,39 +16,32 @@ use std::time::Duration;
 use rgb_color::RgbColor;
 use temperature_pixel::TemperaturPixel;
 
-pub fn get_image_raw_data(use_simulation_data: bool) -> (Vec<f32>, (u32, u32)) {
-    let mut mlx_sensor_data;
-    let shape;
+pub fn get_image_raw_data(
+    use_simulation_data: bool,
+    shape: &mut (u32, u32),
+    mlx_sensor_data: &mut Vec<f32>,
+    sensor: &mut Mlx90640Driver<I2cdev>,
+    period: u64,
+) {
     if use_simulation_data {
+        get_simulation_data(shape, mlx_sensor_data);
+    } else {
+        sensor.generate_image_if_ready(mlx_sensor_data).unwrap();
+        sleep(Duration::from_millis(period));
+        sensor.generate_image_if_ready(mlx_sensor_data).unwrap();
+    }
+}
+
+fn get_simulation_data(shape: &mut (u32, u32), mlx_sensor_data: &mut Vec<f32>) {
+    #[cfg(not(target_arch = "arm"))]
+    {
         let bytes = std::fs::read("data/flir_f32.npy").unwrap();
         let reader = npyz::NpyFile::new(&bytes[..]).unwrap();
         let shape_vec = reader.shape().to_vec();
-        shape = (shape_vec[0] as u32, shape_vec[1] as u32);
-        mlx_sensor_data = reader.into_vec::<f32>().unwrap();
+        *shape = (shape_vec[0] as u32, shape_vec[1] as u32);
+        *mlx_sensor_data = reader.into_vec::<f32>().unwrap();
         sleep(Duration::from_millis(250)); // four fps
-    } else {
-        let i2c_bus = I2cdev::new("/dev/i2c-1").expect("/dev/i2c-1 needs to be an I2C controller");
-        // Default address for these cameras is 0x33
-        let mut sensor = Mlx90640Driver::new(i2c_bus, 0x33).unwrap();
-
-        let frame_rate_in = mlx9064x::FrameRate::Four;
-        let frame_rate: f32 = frame_rate_in.into();
-        let period = ((1.0 / frame_rate) * 1000.0) as u64;
-        println!("FPS: {:?} ({:?} ms)", frame_rate, period);
-        sensor.set_frame_rate(frame_rate_in).unwrap();
-        sensor.set_access_pattern(mlx9064x::AccessPattern::Interleave).unwrap();
-        // A buffer for storing the temperature "image"
-        shape = (sensor.height() as u32, sensor.width() as u32);
-        mlx_sensor_data = vec![0f32; sensor.height() * sensor.width()];
-        sensor.synchronize().unwrap();
-
-        sensor.generate_image_if_ready(&mut mlx_sensor_data).unwrap();
-        sleep(Duration::from_millis(period));
-        sensor.generate_image_if_ready(&mut mlx_sensor_data).unwrap();
-
-        println!("Ambient temperature: {:?}°C", sensor.ambient_temperature().unwrap());
     }
-    (mlx_sensor_data, shape)
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -98,7 +93,7 @@ impl RawImageProcessingSettings {
 }
 
 pub fn process_raw_image_data(
-    mlx_sensor_data: Vec<f32>,
+    mlx_sensor_data: &Vec<f32>,
     shape: (u32, u32),
     settings: &RawImageProcessingSettings,
 ) -> (
@@ -145,7 +140,6 @@ pub fn process_raw_image_data(
         min_temp = min_pixel.value;
         max_temp = max_pixel.value;
     }
-    println!("{min_temp} {max_temp}");
     for &temp_in_celsius in mlx_sensor_data.iter() {
         let fraction = normalize(min_temp, max_temp, temp_in_celsius);
         let interpolated_color = RgbColor::lerp(settings.min_temp_color, settings.max_temp_color, fraction);
