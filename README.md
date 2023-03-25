@@ -37,4 +37,6 @@ Further hints here: https://chacin.dev/blog/cross-compiling-rust-for-the-raspber
 ### Startup
 
 scp target/armv7-unknown-linux-gnueabihf/release/thermocam dan@192.168.178.50:/usr/bin/thermocam
+scp dan@192.168.178.50:/home/dan/Bilder/test.jpg .
+scp dan@192.168.178.50:/home/dan/Bilder/test.avi .
 Add startx /usr/bin/thermocam to .bashrc

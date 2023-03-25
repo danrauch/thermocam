@@ -20,6 +20,14 @@ const MAX_TEMP: f32 = 35.0;
 const MIN_TEMP_COLOR: RgbColor = RgbColor { r: 0, g: 0, b: 255 };
 const MAX_TEMP_COLOR: RgbColor = RgbColor { r: 255, g: 0, b: 0 };
 
+use v4l::buffer::Type;
+use v4l::io::mmap::Stream;
+use v4l::io::traits::CaptureStream;
+use v4l::video::Capture;
+use v4l::Device;
+use v4l::FourCC;
+use opencv::{highgui, prelude::*, videoio, Result};
+
 slint::include_modules!();
 fn main() -> std::io::Result<()> {
     let (use_simulation_data, deactivate_autoscale) = parse_cli();
@@ -88,7 +96,37 @@ fn main() -> std::io::Result<()> {
         let mut mlx_sensor_data = vec![0f32; sensor.height() * sensor.width()];
         sensor.synchronize().unwrap();
 
+        let mut dev = Device::new(0).expect("Failed to open device");
+
+        // let mut fmt = dev.format().expect("Failed to read format");
+        // fmt.width = 640;
+        // fmt.height = 480;
+        // fmt.fourcc = FourCC::new(b"P010");
+        // dev.set_format(&fmt).expect("Failed to write format");
+
+        // let fmt = dev.format().expect("Failed to read format");
+        // println!(
+        //     "Width: {}, Height: {}, fourcc: {}", // Width: 1920, Height: 1080, fourcc: YUYV
+        //     fmt.width,
+        //     fmt.height,
+        //     fmt.fourcc,
+        // );
+
+        let mut stream = Stream::with_buffers(&mut dev, Type::VideoCapture, 4).expect("Failed to create buffer stream");
+
+        // let (tx, rx) = mpsc::channel();
+
         loop {
+            let (buf, meta) = stream.next().unwrap();
+            println!(
+                "Buffer size: {}, seq: {}, timestamp: {}",
+                buf.len(),
+                meta.sequence,
+                meta.timestamp
+            );
+
+            let cam_rgb = fun_name(buf);
+
             get_image_raw_data(
                 use_simulation_data,
                 &mut shape,
@@ -132,8 +170,11 @@ fn main() -> std::io::Result<()> {
                     upscaled_image.width(),
                     upscaled_image.height(),
                 ));
+                let real_image =
+                    slint::Image::from_rgb8(slint::SharedPixelBuffer::clone_from_slice(&cam_rgb, 640, 480));
 
                 mw.set_thermo_image(thermo_image);
+                mw.set_real_image(real_image);
 
                 mw.set_min_temp_text(slint::SharedString::from(&min_pixel_formatted));
                 mw.set_mean_temp_text(slint::SharedString::from(&mean_pixel_formatted));
@@ -150,6 +191,49 @@ fn main() -> std::io::Result<()> {
     thread.join().unwrap();
 
     Ok(())
+}
+
+fn fun_name(buf: &[u8]) -> image::ImageBuffer<image::Rgb<u8>, Vec<u8>> {
+    let step: u32 = 640;
+    let size: u32 = 640 * 480;
+    let mut cam_rgb = vec![0u8; 640 * 480 * 3];
+    for i in 0..480 {
+        for j in 0..640 {
+            let offset = (i * step + j) as usize;
+            let Y: f32 = buf[offset] as f32;
+            let U: f32 = 128.0; // buf[(size + (i / 2) * (step / 2) + j / 2) as usize] as f32;
+            let V: f32 = 128.0; // buf[((size as f32 * 1.125) as u32 + (i / 2) * (step / 2) + j / 2) as usize] as f32;
+
+            let mut R: f32 = Y + 1.402 * (V - 128.0);
+            let mut G: f32 = Y - 0.344 * (U - 128.0) - 0.714 * (V - 128.0);
+            let mut B: f32 = Y + 1.772 * (U - 128.0);
+
+            if R < 0.0 {
+                R = 0.0;
+            }
+            if G < 0.0 {
+                G = 0.0;
+            }
+            if B < 0.0 {
+                B = 0.0;
+            }
+            if R > 255.0 {
+                R = 255.0;
+            }
+            if G > 255.0 {
+                G = 255.0;
+            }
+            if B > 255.0 {
+                B = 255.0;
+            }
+
+            cam_rgb[(i * step + j) as usize] = R as u8;
+            cam_rgb[(i * step + j + 1) as usize] = G as u8;
+            cam_rgb[(i * step + j + 2) as usize] = B as u8;
+        }
+    }
+    let img = image::RgbImage::from_raw(640, 480, cam_rgb).unwrap();
+    img
 }
 
 fn parse_cli() -> (bool, bool) {
