@@ -33,6 +33,10 @@ cargo build --target aarch64-unknown-linux-gnu
 
 Further hints here: https://chacin.dev/blog/cross-compiling-rust-for-the-raspberry-pi
 
+### OpenCV Error
+
+apt install libstdc++-12-dev
+
 
 ### Startup
 
@@ -40,3 +44,8 @@ scp target/armv7-unknown-linux-gnueabihf/release/thermocam dan@192.168.178.50:/u
 scp dan@192.168.178.50:/home/dan/Bilder/test.jpg .
 scp dan@192.168.178.50:/home/dan/Bilder/test.avi .
 Add startx /usr/bin/thermocam to .bashrc
+
+1296x972 pGAA works (SGRBG10P) 
+640x480 pGAA works (SGRBG10P) -> buffer size 384000 => 10bit raw bayer packed, 5 bytes for every 4 pixels
+YUV420
+648x486

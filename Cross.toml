@@ -4,7 +4,8 @@
 [target.aarch64-unknown-linux-gnu]
 image = "ghcr.io/slint-ui/slint/aarch64-unknown-linux-gnu"
 [target.armv7-unknown-linux-gnueabihf]
-image = "localhost/cross-armv7-unknown-linux-gnueabihf-libv4l"
+image = "ghcr.io/slint-ui/slint/armv7-unknown-linux-gnueabihf"
+#image = "localhost/cross-armv7-unknown-linux-gnueabihf-libv4l"
 [target.riscv64gc-unknown-linux-gnu]
 image = "ghcr.io/slint-ui/slint/riscv64gc-unknown-linux-gnu"
 [target.x86_64-unknown-linux-gnu]

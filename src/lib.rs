@@ -1,5 +1,6 @@
 pub mod rgb_color;
 pub mod temperature_pixel;
+pub mod thermo_image_processing;
 
 use image;
 use image::imageops::FilterType;
@@ -15,20 +16,26 @@ use std::time::Duration;
 
 use rgb_color::RgbColor;
 use temperature_pixel::TemperaturPixel;
+use thermo_image_processing::ThermoImageProcessor;
 
-pub fn get_image_raw_data(
+pub fn get_thermo_image_raw_data(
     use_simulation_data: bool,
     shape: &mut (u32, u32),
     mlx_sensor_data: &mut Vec<f32>,
-    sensor: &mut Mlx90640Driver<I2cdev>,
+    sensor: &mut Option<Mlx90640Driver<I2cdev>>,
     period: u64,
 ) {
     if use_simulation_data {
         get_simulation_data(shape, mlx_sensor_data);
     } else {
-        sensor.generate_image_if_ready(mlx_sensor_data).unwrap();
-        sleep(Duration::from_millis(period));
-        sensor.generate_image_if_ready(mlx_sensor_data).unwrap();
+        match sensor {
+            Some(sensor) => {
+                sensor.generate_image_if_ready(mlx_sensor_data).unwrap();
+                sleep(Duration::from_millis(period));
+                sensor.generate_image_if_ready(mlx_sensor_data).unwrap();
+            }
+            None => panic!("no sensor available in non-simulation mode"),
+        }
     }
 }
 
@@ -44,58 +51,10 @@ fn get_simulation_data(shape: &mut (u32, u32), mlx_sensor_data: &mut Vec<f32>) {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
-pub struct RawImageProcessingSettings {
-    pub interpolation_factor: u32,
-    pub autoscale_enabled: bool,
-    pub manual_scale_min_temp: f32,
-    pub manual_scale_max_temp: f32,
-    pub min_temp_color: RgbColor,
-    pub max_temp_color: RgbColor,
-}
-
-impl RawImageProcessingSettings {
-    pub fn new(interpolation_factor: u32) -> Self {
-        RawImageProcessingSettings {
-            interpolation_factor,
-            autoscale_enabled: true,
-            manual_scale_min_temp: -5.0,
-            manual_scale_max_temp: 35.0,
-            min_temp_color: RgbColor { r: 0, g: 0, b: 255 },
-            max_temp_color: RgbColor { r: 255, g: 0, b: 0 },
-        }
-    }
-
-    pub fn with_autoscale_enabled(mut self, autoscale_enabled: bool) -> Self {
-        self.autoscale_enabled = autoscale_enabled;
-        self
-    }
-
-    pub fn with_manual_scale_min_temp(mut self, manual_scale_min_temp: f32) -> Self {
-        self.manual_scale_min_temp = manual_scale_min_temp;
-        self
-    }
-
-    pub fn with_manual_scale_max_temp(mut self, manual_scale_max_temp: f32) -> Self {
-        self.manual_scale_max_temp = manual_scale_max_temp;
-        self
-    }
-
-    pub fn with_min_temp_color(mut self, min_temp_color: RgbColor) -> Self {
-        self.min_temp_color = min_temp_color;
-        self
-    }
-
-    pub fn with_max_temp_color(mut self, max_temp_color: RgbColor) -> Self {
-        self.max_temp_color = max_temp_color;
-        self
-    }
-}
-
-pub fn process_raw_image_data(
+pub fn process_raw_thermo_image_data(
     mlx_sensor_data: &Vec<f32>,
     shape: (u32, u32),
-    settings: &RawImageProcessingSettings,
+    settings: &ThermoImageProcessor,
 ) -> (
     TemperaturPixel,
     TemperaturPixel,

@@ -16,7 +16,7 @@ export component MainWindow inherits Window {
     height: 320px;
 
     in property thermo_image <=> thermo_image.source;
-    in property real_image <=> real_image.source;
+    in property camera_image <=> camera_image.source;
     in property scale_image <=> scale_image.source;
     
     in property max_temp_text <=> max_temp_text.text;
@@ -40,7 +40,7 @@ export component MainWindow inherits Window {
                     width: 160px;
                     height: 120px;
                 }  // expected size: 320x240
-                real_image := Image {
+                camera_image := Image {
                     width: 160px;
                     height: 120px;
                 }  // expected size: 320x240
