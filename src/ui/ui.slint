@@ -15,7 +15,6 @@ export component MainWindow inherits Window {
     width: 480px;
     height: 320px;
 
-    in property thermo_image <=> thermo_image.source;
     in property camera_image <=> camera_image.source;
     in property scale_image <=> scale_image.source;
     
@@ -35,15 +34,11 @@ export component MainWindow inherits Window {
     HorizontalLayout {
         VerticalLayout { 
             spacing: 3px;
-            HorizontalLayout { 
-                thermo_image := Image {
-                    width: 160px;
-                    height: 120px;
-                }  // expected size: 320x240
+            HorizontalLayout {
                 camera_image := Image {
-                    width: 160px;
-                    height: 120px;
-                }  // expected size: 320x240
+                    width: 320px;
+                    height: 240px;
+                }
                 VerticalLayout {    
                     spacing: 1px;  
                     padding-left: 3px;             

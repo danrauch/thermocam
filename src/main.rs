@@ -1,9 +1,8 @@
 use std::sync::{Arc, Mutex};
 
 use clap;
+use image;
 use image::imageops::FilterType;
-use image::{self, DynamicImage, Pixel};
-
 
 use linux_embedded_hal::I2cdev;
 use mlx9064x;
@@ -35,7 +34,14 @@ use v4l::FourCC;
 
 slint::include_modules!();
 fn main() -> std::io::Result<()> {
-    let (use_simulation_data, deactivate_autoscale, camera_image_width, camera_image_height, new_fourcc) = parse_cli();
+    let (
+        use_simulation_data,
+        deactivate_autoscale,
+        camera_image_width,
+        camera_image_height,
+        new_fourcc,
+        foreground_alpha,
+    ) = parse_cli();
 
     let raw_process_settings = Arc::new(Mutex::new(
         ThermoImageProcessor::new(INTERPOLATION_FACTOR)
@@ -131,6 +137,7 @@ fn main() -> std::io::Result<()> {
 
         loop {
             let (buf, meta) = stream.next().unwrap();
+
             println!(
                 "Buffer size: {}, seq: {}, timestamp: {}, width: {}, height: {}, format: {}",
                 buf.len(),
@@ -142,39 +149,34 @@ fn main() -> std::io::Result<()> {
             );
 
             // convert 10-bit bayer to 16 bit bayer
-            let in_buf_size = (camera_image_shape.0 * camera_image_shape.1) as f32 * 1.25;
-            let mut convert_buf = vec![0u8; in_buf_size as usize]; // 10-bit depth
-
+            let bayer_in_buf_size = (camera_image_shape.0 * camera_image_shape.1) as f32 * 1.25;
+            let mut convert_buf = vec![0u8; bayer_in_buf_size as usize]; // 10-bit depth
             let mut convert_buf_idx = 0;
-            for i in (0..in_buf_size as usize).step_by(5) {
+            for i in (0..bayer_in_buf_size as usize).step_by(5) {
                 let pix1 = (buf[i + 0] << 2 | ((buf[i + 4] >> 0) & 3)) as u16;
                 let pix2 = (buf[i + 1] << 2 | ((buf[i + 4] >> 2) & 3)) as u16;
                 let pix3 = (buf[i + 2] << 2 | ((buf[i + 4] >> 4) & 3)) as u16;
                 let pix4 = (buf[i + 3] << 2 | ((buf[i + 4] >> 6) & 3)) as u16;
 
-                convert_buf[convert_buf_idx + 0] = (pix1 >> 8) as u8 & 0xff;
-                convert_buf[convert_buf_idx + 1] = (pix1 & 0xff) as u8;
-                convert_buf[convert_buf_idx + 2] = (pix2 >> 8) as u8 & 0xff;
-                convert_buf[convert_buf_idx + 3] = (pix2 & 0xff) as u8;
-                convert_buf[convert_buf_idx + 4] = (pix3 >> 8) as u8 & 0xff;
-                convert_buf[convert_buf_idx + 5] = (pix3 & 0xff) as u8;
-                convert_buf[convert_buf_idx + 6] = (pix4 >> 8) as u8 & 0xff;
-                convert_buf[convert_buf_idx + 7] = (pix4 & 0xff) as u8;
+                convert_buf[convert_buf_idx + 0] = pix1 as u8;
+                convert_buf[convert_buf_idx + 1] = pix2 as u8;
+                convert_buf[convert_buf_idx + 2] = pix3 as u8;
+                convert_buf[convert_buf_idx + 3] = pix4 as u8;
 
-                convert_buf_idx += 8;
+                convert_buf_idx += 4;
             }
 
             // debayer
-            let bayer_out_buf_size: usize = camera_image_shape.0 as usize * camera_image_shape.1 as usize;
-            let mut cam_rgb_buf = vec![0u8; bayer_out_buf_size * 3];
+            let bayer_out_buf_size = camera_image_shape.0 as usize * camera_image_shape.1 as usize;
+            let mut cam_rgb_raw_buf = vec![0u8; bayer_out_buf_size * 3];
             let depth = bayer::RasterDepth::Depth8;
             let mut dst = bayer::RasterMut::new(
                 camera_image_shape.0 as usize,
                 camera_image_shape.1 as usize,
                 depth,
-                &mut cam_rgb_buf,
+                &mut cam_rgb_raw_buf,
             );
-            let cfa = bayer::CFA::GRBG; // SGRBG10P (tested: GBRG, GRBG, BGGR, RGGB)
+            let cfa = bayer::CFA::GRBG; // SGRBG10P
             let alg = bayer::Demosaic::Linear;
 
             bayer::run_demosaic(
@@ -186,19 +188,11 @@ fn main() -> std::io::Result<()> {
             )
             .unwrap();
 
-            // let out_buf_size = camera_image_shape.0 * camera_image_shape.1;
-            // let mut out_buf = vec![0u8; 3 * out_buf_size as usize]; // 8-bit depth
+            let cam_rgb =
+                image::RgbImage::from_raw(camera_image_shape.0, camera_image_shape.1, cam_rgb_raw_buf).unwrap();
 
-            // // convert from RGB u16 to u8 RGB
-            // let mut i = 0;
-            // for idx in (0..bayer_out_buf_size * 3).step_by(1) {
-            //     // idx fringe image
-            //     out_buf[i] =  cam_rgb_buf[idx];
-            //     i += 1;
-            // }
+            let cam_rgb_flipped = image::DynamicImage::ImageRgb8(cam_rgb).fliph();
 
-            let cam_rgb = image::RgbImage::from_raw(camera_image_shape.0, camera_image_shape.1, cam_rgb_buf).unwrap();
-            cam_rgb.save("final_image.jpg").unwrap();
             get_thermo_image_raw_data(
                 use_simulation_data,
                 &mut thermo_image_shape,
@@ -234,16 +228,19 @@ fn main() -> std::io::Result<()> {
             let min_scale_pixel_formatted = format!("{:.0}°C", min_manual_scale_temp);
             let max_scale_pixel_formatted = format!("{:.0}°C", max_manual_scale_temp);
 
-            let mut blended_img = image::RgbImage::new(cam_rgb.width(), cam_rgb.height());
-            for ((x, y, pxo), pxi) in blended_img.enumerate_pixels_mut().zip(cam_rgb.pixels()) {
+            let mut blended_img = image::RgbImage::new(cam_rgb_flipped.width(), cam_rgb_flipped.height());
+            for ((x, y, pxo), pxi) in blended_img
+                .enumerate_pixels_mut()
+                .zip(cam_rgb_flipped.as_rgb8().unwrap().pixels())
+            {
                 let sample_thermo_x =
-                    ((x as f32 / cam_rgb.width() as f32) * upscaled_thermo_image.width() as f32) as u32;
+                    ((x as f32 / cam_rgb_flipped.width() as f32) * upscaled_thermo_image.width() as f32) as u32;
                 let sample_thermo_y =
-                    ((y as f32 / cam_rgb.height() as f32) * upscaled_thermo_image.height() as f32) as u32;
+                    ((y as f32 / cam_rgb_flipped.height() as f32) * upscaled_thermo_image.height() as f32) as u32;
 
                 let thermo_sample = upscaled_thermo_image.get_pixel(sample_thermo_x, sample_thermo_y);
-                let foreground_alpha = 0.0;
 
+                // luminance greyscale
                 let mut input_greyscale = 0.3 * pxi.0[0] as f32 + 0.59 * pxi.0[1] as f32 + 0.11 * pxi.0[2] as f32;
                 if input_greyscale < 0.0 {
                     input_greyscale = 255.0
@@ -251,9 +248,12 @@ fn main() -> std::io::Result<()> {
                     input_greyscale = 255.0
                 }
 
-                let blended_r = (thermo_sample.0[0] as f32 * foreground_alpha) + (input_greyscale * (1.0 - foreground_alpha));
-                let blended_g = (thermo_sample.0[1] as f32 * foreground_alpha) + (input_greyscale * (1.0 - foreground_alpha));
-                let blended_b = (thermo_sample.0[2] as f32 * foreground_alpha) + (input_greyscale * (1.0 - foreground_alpha));
+                let blended_r =
+                    (thermo_sample.0[0] as f32 * foreground_alpha) + (input_greyscale * (1.0 - foreground_alpha));
+                let blended_g =
+                    (thermo_sample.0[1] as f32 * foreground_alpha) + (input_greyscale * (1.0 - foreground_alpha));
+                let blended_b =
+                    (thermo_sample.0[2] as f32 * foreground_alpha) + (input_greyscale * (1.0 - foreground_alpha));
 
                 pxo[0] = blended_r as u8;
                 pxo[1] = blended_g as u8;
@@ -263,18 +263,12 @@ fn main() -> std::io::Result<()> {
             let handle_copy = handle_weak.clone();
             slint::invoke_from_event_loop(move || {
                 let mw = handle_copy.unwrap();
-                let thermo_image = slint::Image::from_rgb8(slint::SharedPixelBuffer::clone_from_slice(
-                    upscaled_thermo_image.as_raw(),
-                    upscaled_thermo_image.width(),
-                    upscaled_thermo_image.height(),
-                ));
                 let camera_image = slint::Image::from_rgb8(slint::SharedPixelBuffer::clone_from_slice(
                     &blended_img,
                     camera_image_shape.0,
                     camera_image_shape.1,
                 ));
 
-                mw.set_thermo_image(thermo_image);
                 mw.set_camera_image(camera_image);
 
                 mw.set_min_temp_text(slint::SharedString::from(&min_pixel_formatted));
@@ -294,7 +288,7 @@ fn main() -> std::io::Result<()> {
     Ok(())
 }
 
-fn yuyv_to_rgb(yuyv_buffer: &[u8], yuyv_shape: (u32, u32), cam_rgb: &mut [u8]) {
+/* fn yuyv_to_rgb(yuyv_buffer: &[u8], yuyv_shape: (u32, u32), cam_rgb: &mut [u8]) {
     // from https://gist.github.com/wlhe/fcad2999ceb4a826bd811e9fdb6fe652
     let yuyv_buf_size: usize = yuyv_shape.0 as usize * yuyv_shape.1 as usize * 2;
     let mut rgb_idx_offset = 0;
@@ -345,7 +339,7 @@ fn yuyv_to_rgb(yuyv_buffer: &[u8], yuyv_shape: (u32, u32), cam_rgb: &mut [u8]) {
 
         rgb_idx_offset += 6;
     }
-}
+} */
 
 /* fn yuv420_to_rgb(buf: &[u8], shape: (u32, u32)) -> image::ImageBuffer<image::Rgb<u8>, Vec<u8>> {
     let step: u32 = shape.0;
@@ -391,7 +385,7 @@ fn yuyv_to_rgb(yuyv_buffer: &[u8], yuyv_shape: (u32, u32), cam_rgb: &mut [u8]) {
 }
  */
 
-fn parse_cli() -> (bool, bool, u32, u32, String) {
+fn parse_cli() -> (bool, bool, u32, u32, String, f32) {
     let matches = clap::Command::new("thermocam")
         .arg(
             clap::Arg::new("deactivate_autoscale")
@@ -422,8 +416,14 @@ fn parse_cli() -> (bool, bool, u32, u32, String) {
         .arg(
             clap::Arg::new("fourcc")
                 .short('f')
-                .default_value("YUYV")
+                .default_value("pGAA")
                 .value_parser(clap::value_parser!(String)),
+        )
+        .arg(
+            clap::Arg::new("foreground_alpha")
+                .short('a')
+                .default_value("0.5")
+                .value_parser(clap::value_parser!(f32)),
         )
         .get_matches();
     let use_simulation_data = matches.get_flag("simulation_data");
@@ -440,11 +440,16 @@ fn parse_cli() -> (bool, bool, u32, u32, String) {
         .try_get_one::<String>("fourcc")
         .expect("Could not read a fourcc")
         .expect("Could not read a fourcc");
+    let foreground_alpha = matches
+        .try_get_one::<f32>("foreground_alpha")
+        .expect("Could not read a foreground_alpha")
+        .expect("Could not read a foreground_alpha");
     (
         use_simulation_data,
         deactivate_autoscale,
         *camera_image_width,
         *camera_image_height,
         fourcc.clone(),
+        *foreground_alpha,
     )
 }

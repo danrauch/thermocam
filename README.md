@@ -43,7 +43,7 @@ apt install libstdc++-12-dev
 scp target/armv7-unknown-linux-gnueabihf/release/thermocam dan@192.168.178.50:/usr/bin/thermocam
 scp dan@192.168.178.50:/home/dan/Bilder/test.jpg .
 scp dan@192.168.178.50:/home/dan/Bilder/test.avi .
-Add startx /usr/bin/thermocam to .bashrc
+Add startx /usr/bin/thermocam to .bashrc1^
 
 1296x972 pGAA works (SGRBG10P) 
 640x480 pGAA works (SGRBG10P) -> buffer size 384000 => 10bit raw bayer packed, 5 bytes for every 4 pixels
