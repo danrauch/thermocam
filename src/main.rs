@@ -129,68 +129,33 @@ fn main() -> std::io::Result<()> {
         dev.set_format(&fmt).expect("Failed to write format");
 
         fmt = dev.format().expect("Failed to read format");
-        let camera_image_shape = (fmt.width, fmt.height);
+        let cam_image_shape = (fmt.width, fmt.height);
         let fourcc = fmt.fourcc;
         println!("After change: Camera shape {camera_image_shape:?} + {fourcc}");
 
         let mut stream = Stream::with_buffers(&mut dev, Type::VideoCapture, 4).expect("Failed to create buffer stream");
 
         loop {
-            let (buf, meta) = stream.next().unwrap();
+            let (cam_data_buffer, meta) = stream.next().unwrap();
 
             println!(
                 "Buffer size: {}, seq: {}, timestamp: {}, width: {}, height: {}, format: {}",
-                buf.len(),
+                cam_data_buffer.len(),
                 meta.sequence,
                 meta.timestamp,
-                camera_image_shape.0,
-                camera_image_shape.1,
+                cam_image_shape.0,
+                cam_image_shape.1,
                 fourcc
             );
 
-            // convert 10-bit bayer to 16 bit bayer
-            let bayer_in_buf_size = (camera_image_shape.0 * camera_image_shape.1) as f32 * 1.25;
-            let mut convert_buf = vec![0u8; bayer_in_buf_size as usize]; // 10-bit depth
-            let mut convert_buf_idx = 0;
-            for i in (0..bayer_in_buf_size as usize).step_by(5) {
-                let pix1 = (buf[i + 0] << 2 | ((buf[i + 4] >> 0) & 3)) as u16;
-                let pix2 = (buf[i + 1] << 2 | ((buf[i + 4] >> 2) & 3)) as u16;
-                let pix3 = (buf[i + 2] << 2 | ((buf[i + 4] >> 4) & 3)) as u16;
-                let pix4 = (buf[i + 3] << 2 | ((buf[i + 4] >> 6) & 3)) as u16;
+            let rgb_buffer_size = 3 * cam_image_shape.0 as usize * cam_image_shape.1 as usize;
+            let mut cam_rgb_raw_buf = vec![0u8; rgb_buffer_size];
 
-                convert_buf[convert_buf_idx + 0] = pix1 as u8;
-                convert_buf[convert_buf_idx + 1] = pix2 as u8;
-                convert_buf[convert_buf_idx + 2] = pix3 as u8;
-                convert_buf[convert_buf_idx + 3] = pix4 as u8;
+            // decode camera data
+            sgrbg10p_to_rgb(cam_data_buffer, cam_image_shape, &mut cam_rgb_raw_buf);
+            let cam_rgb = image::RgbImage::from_raw(cam_image_shape.0, cam_image_shape.1, cam_rgb_raw_buf).unwrap();
 
-                convert_buf_idx += 4;
-            }
-
-            // debayer
-            let bayer_out_buf_size = camera_image_shape.0 as usize * camera_image_shape.1 as usize;
-            let mut cam_rgb_raw_buf = vec![0u8; bayer_out_buf_size * 3];
-            let depth = bayer::RasterDepth::Depth8;
-            let mut dst = bayer::RasterMut::new(
-                camera_image_shape.0 as usize,
-                camera_image_shape.1 as usize,
-                depth,
-                &mut cam_rgb_raw_buf,
-            );
-            let cfa = bayer::CFA::GRBG; // SGRBG10P
-            let alg = bayer::Demosaic::Linear;
-
-            bayer::run_demosaic(
-                &mut convert_buf.as_slice(),
-                bayer::BayerDepth::Depth8,
-                cfa,
-                alg,
-                &mut dst,
-            )
-            .unwrap();
-
-            let cam_rgb =
-                image::RgbImage::from_raw(camera_image_shape.0, camera_image_shape.1, cam_rgb_raw_buf).unwrap();
-
+            // flip image horizontally
             let cam_rgb_flipped = image::DynamicImage::ImageRgb8(cam_rgb).fliph();
 
             get_thermo_image_raw_data(
@@ -221,6 +186,8 @@ fn main() -> std::io::Result<()> {
                 }
             }
 
+            let blended_img = blend_images_of_different_sizes(cam_rgb_flipped, upscaled_thermo_image, foreground_alpha);
+
             let min_pixel_formatted = format!("Min: {:.2}°C", min_pixel.value);
             let mean_pixel_formatted = format!("Mean: {:.2}°C", mean_temperature);
             let max_pixel_formatted = format!("Max: {:.2}°C", max_pixel.value);
@@ -228,45 +195,13 @@ fn main() -> std::io::Result<()> {
             let min_scale_pixel_formatted = format!("{:.0}°C", min_manual_scale_temp);
             let max_scale_pixel_formatted = format!("{:.0}°C", max_manual_scale_temp);
 
-            let mut blended_img = image::RgbImage::new(cam_rgb_flipped.width(), cam_rgb_flipped.height());
-            for ((x, y, pxo), pxi) in blended_img
-                .enumerate_pixels_mut()
-                .zip(cam_rgb_flipped.as_rgb8().unwrap().pixels())
-            {
-                let sample_thermo_x =
-                    ((x as f32 / cam_rgb_flipped.width() as f32) * upscaled_thermo_image.width() as f32) as u32;
-                let sample_thermo_y =
-                    ((y as f32 / cam_rgb_flipped.height() as f32) * upscaled_thermo_image.height() as f32) as u32;
-
-                let thermo_sample = upscaled_thermo_image.get_pixel(sample_thermo_x, sample_thermo_y);
-
-                // luminance greyscale
-                let mut input_greyscale = 0.3 * pxi.0[0] as f32 + 0.59 * pxi.0[1] as f32 + 0.11 * pxi.0[2] as f32;
-                if input_greyscale < 0.0 {
-                    input_greyscale = 255.0
-                } else if input_greyscale > 255.0 {
-                    input_greyscale = 255.0
-                }
-
-                let blended_r =
-                    (thermo_sample.0[0] as f32 * foreground_alpha) + (input_greyscale * (1.0 - foreground_alpha));
-                let blended_g =
-                    (thermo_sample.0[1] as f32 * foreground_alpha) + (input_greyscale * (1.0 - foreground_alpha));
-                let blended_b =
-                    (thermo_sample.0[2] as f32 * foreground_alpha) + (input_greyscale * (1.0 - foreground_alpha));
-
-                pxo[0] = blended_r as u8;
-                pxo[1] = blended_g as u8;
-                pxo[2] = blended_b as u8;
-            }
-
             let handle_copy = handle_weak.clone();
             slint::invoke_from_event_loop(move || {
                 let mw = handle_copy.unwrap();
                 let camera_image = slint::Image::from_rgb8(slint::SharedPixelBuffer::clone_from_slice(
                     &blended_img,
-                    camera_image_shape.0,
-                    camera_image_shape.1,
+                    cam_image_shape.0,
+                    cam_image_shape.1,
                 ));
 
                 mw.set_camera_image(camera_image);
@@ -286,6 +221,82 @@ fn main() -> std::io::Result<()> {
     thread.join().unwrap();
 
     Ok(())
+}
+
+fn blend_images_of_different_sizes(
+    image1: image::DynamicImage,
+    image2: image::ImageBuffer<image::Rgb<u8>, Vec<u8>>,
+    foreground_alpha: f32,
+) -> image::ImageBuffer<image::Rgb<u8>, Vec<u8>> {
+    let mut blended_img = image::RgbImage::new(image1.width(), image1.height());
+    for ((x, y, pxo), pxi) in blended_img
+        .enumerate_pixels_mut()
+        .zip(image1.as_rgb8().unwrap().pixels())
+    {
+        let sample_image2_x = ((x as f32 / image1.width() as f32) * image2.width() as f32) as u32;
+        let sample_image2_y = ((y as f32 / image1.height() as f32) * image2.height() as f32) as u32;
+
+        let image2_sample = image2.get_pixel(sample_image2_x, sample_image2_y);
+
+        // luminance greyscale
+        let mut input_greyscale = 0.3 * pxi.0[0] as f32 + 0.59 * pxi.0[1] as f32 + 0.11 * pxi.0[2] as f32;
+        if input_greyscale < 0.0 {
+            input_greyscale = 255.0
+        } else if input_greyscale > 255.0 {
+            input_greyscale = 255.0
+        }
+
+        let blended_r = (image2_sample.0[0] as f32 * foreground_alpha) + (input_greyscale * (1.0 - foreground_alpha));
+        let blended_g = (image2_sample.0[1] as f32 * foreground_alpha) + (input_greyscale * (1.0 - foreground_alpha));
+        let blended_b = (image2_sample.0[2] as f32 * foreground_alpha) + (input_greyscale * (1.0 - foreground_alpha));
+
+        pxo[0] = blended_r as u8;
+        pxo[1] = blended_g as u8;
+        pxo[2] = blended_b as u8;
+    }
+    blended_img
+}
+
+fn sgrbg10p_to_rgb(buf: &[u8], camera_image_shape: (u32, u32), cam_rgb_raw_buf: &mut [u8]) {
+    // convert 10-bit bayer to 16 bit bayer
+    let bayer_in_buf_size = (camera_image_shape.0 * camera_image_shape.1) as f32 * 1.25;
+    let mut convert_buf = vec![0u8; bayer_in_buf_size as usize];
+    // 10-bit depth
+    let mut convert_buf_idx = 0;
+    for i in (0..bayer_in_buf_size as usize).step_by(5) {
+        let pix1 = (buf[i + 0] << 2 | ((buf[i + 4] >> 0) & 3)) as u16;
+        let pix2 = (buf[i + 1] << 2 | ((buf[i + 4] >> 2) & 3)) as u16;
+        let pix3 = (buf[i + 2] << 2 | ((buf[i + 4] >> 4) & 3)) as u16;
+        let pix4 = (buf[i + 3] << 2 | ((buf[i + 4] >> 6) & 3)) as u16;
+
+        convert_buf[convert_buf_idx + 0] = pix1 as u8;
+        convert_buf[convert_buf_idx + 1] = pix2 as u8;
+        convert_buf[convert_buf_idx + 2] = pix3 as u8;
+        convert_buf[convert_buf_idx + 3] = pix4 as u8;
+
+        convert_buf_idx += 4;
+    }
+
+    // debayer
+    let depth = bayer::RasterDepth::Depth8;
+    let mut dst = bayer::RasterMut::new(
+        camera_image_shape.0 as usize,
+        camera_image_shape.1 as usize,
+        depth,
+        cam_rgb_raw_buf,
+    );
+    let cfa = bayer::CFA::GRBG;
+    // SGRBG10P
+    let alg = bayer::Demosaic::Linear;
+
+    bayer::run_demosaic(
+        &mut convert_buf.as_slice(),
+        bayer::BayerDepth::Depth8,
+        cfa,
+        alg,
+        &mut dst,
+    )
+    .unwrap();
 }
 
 /* fn yuyv_to_rgb(yuyv_buffer: &[u8], yuyv_shape: (u32, u32), cam_rgb: &mut [u8]) {
