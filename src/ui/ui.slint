@@ -1,44 +1,47 @@
 import { Button }  from "std-widgets.slint";
 
-global Palette := {
-    property <color> window-background: #2e3440;
-    property <color> widget-background: #4c566a;
-    property <color> widget-stroke: #eceff4;
-    property <color> window-border: #d8dee9;
-    property <color> text-color: #eceff4;
-    property <color> hyper-blue: #5e81ac;
+global Palette {
+    out property <color> window-background: #2e3440;
+    out property <color> widget-background: #4c566a;
+    out property <color> widget-stroke: #eceff4;
+    out property <color> window-border: #d8dee9;
+    out property <color> text-color: #eceff4;
+    out property <color> hyper-blue: #5e81ac;
 }
 
-MainWindow := Window {
+export component MainWindow inherits Window {
     background: Palette.window-background;
 
     width: 480px;
     height: 320px;
 
-    property thermo_image <=> thermo_image.source;
-    property scale_image <=> scale_image.source;
+    in property camera_image <=> camera_image.source;
+    in property scale_image <=> scale_image.source;
     
-    property max_temp_text <=> max_temp_text.text;
-    property mean_temp_text <=> mean_temp_text.text;
-    property min_temp_text <=> min_temp_text.text;
+    in property max_temp_text <=> max_temp_text.text;
+    in property mean_temp_text <=> mean_temp_text.text;
+    in property min_temp_text <=> min_temp_text.text;
 
-    property lower_scale_temp_text <=> lower_scale_temp_text.text;
-    property upper_scale_temp_text <=> upper_scale_temp_text.text;
+    in property lower_scale_temp_text <=> lower_scale_temp_text.text;
+    in property upper_scale_temp_text <=> upper_scale_temp_text.text;
     
     callback autoscale-toggled(bool);
     callback manual-scale-max-temp-increased();
     callback manual-scale-max-temp-decreased();
     callback manual-scale-min-temp-increased();
     callback manual-scale-min-temp-decreased();
+    callback mode-decreased();
+    callback mode-increased();
+    
 
     HorizontalLayout {
         VerticalLayout { 
             spacing: 3px;
-            HorizontalLayout { 
-                thermo_image := Image {
+            HorizontalLayout {
+                camera_image := Image {
                     width: 320px;
                     height: 240px;
-                }  // expected size: 320x240
+                }
                 VerticalLayout {    
                     spacing: 1px;  
                     padding-left: 3px;             
@@ -83,9 +86,9 @@ MainWindow := Window {
             max-width: 125px;
 
             autoscale_button := Button {
-                background: self.checked ? Palette.widget-background.darker(30%) : Palette.widget-background; 
-                border-width: 0px;     
-                border-radius: 0px;                        
+                // background: self.checked ? Palette.widget-background.darker(30%) : Palette.widget-background; 
+                // border-width: 0px;     
+                // border-radius: 0px;                        
                 text: "Autoscale";
                 min-width: 0px;
                 checked: true;
@@ -94,42 +97,54 @@ MainWindow := Window {
             }
             HorizontalLayout {
                 Button {
-                    background: self.enabled ? self.pressed ? Palette.widget-background.darker(30%) : Palette.widget-background : Palette.widget-background.darker(90%);
+                    // background: self.enabled ? self.pressed ? Palette.widget-background.darker(30%) : Palette.widget-background : Palette.widget-background.darker(90%);
                     enabled: !autoscale_button.checked;
                     min-width: 0px;
-                    border-width: 0px;  
-                    border-radius: 0px;   
-                    text: "Min -";
+                    // border-width: 0px;  
+                    // border-radius: 0px;   
+                    text: "Min-";
                     clicked => { manual-scale-min-temp-decreased() }
                 }
                 Button {
-                    background: self.enabled ? self.pressed ? Palette.widget-background.darker(30%) : Palette.widget-background : Palette.widget-background.darker(90%);
+                    // background: self.enabled ? self.pressed ? Palette.widget-background.darker(30%) : Palette.widget-background : Palette.widget-background.darker(90%);
                     enabled: !autoscale_button.checked;
                     min-width: 0px;
-                    border-width: 0px;  
-                    border-radius: 0px;   
-                    text: "Min +";
+                    // border-width: 0px;  
+                    // border-radius: 0px;   
+                    text: "Min+";
                     clicked => { manual-scale-min-temp-increased() }
                 }                
             }
             HorizontalLayout { 
                 Button {
-                    background: self.enabled ? self.pressed ? Palette.widget-background.darker(30%) : Palette.widget-background : Palette.widget-background.darker(90%);
+                    // background: self.enabled ? self.pressed ? Palette.widget-background.darker(30%) : Palette.widget-background : Palette.widget-background.darker(90%);
                     enabled: !autoscale_button.checked;
                     min-width: 0px;
-                    border-width: 0px;  
-                    border-radius: 0px;   
-                    text: "Max -";
+                    // border-width: 0px;  
+                    // border-radius: 0px;   
+                    text: "Max-";
                     clicked => { manual-scale-max-temp-decreased() }
                 }   
                 Button { 
-                    background: self.enabled ? self.pressed ? Palette.widget-background.darker(30%) : Palette.widget-background : Palette.widget-background.darker(90%);
+                    // background: self.enabled ? self.pressed ? Palette.widget-background.darker(30%) : Palette.widget-background : Palette.widget-background.darker(90%);
                     enabled: !autoscale_button.checked;
                     min-width: 0px;
-                    border-width: 0px;  
-                    border-radius: 0px;   
-                    text: "Max +";
+                    // border-width: 0px;  
+                    // border-radius: 0px;   
+                    text: "Max+";
                     clicked => { manual-scale-max-temp-increased() }
+                }                
+            }
+            HorizontalLayout { 
+                Button {
+                    min-width: 0px;
+                    text: "<";
+                    clicked => { mode-decreased() }
+                }   
+                Button { 
+                    min-width: 0px;
+                    text: ">";
+                    clicked => { mode-increased() }
                 }                
             }
         }

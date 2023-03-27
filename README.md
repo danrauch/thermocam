@@ -2,6 +2,19 @@
 
 MLX90640 for RPi in Rust
 
+<img src="doc/prototype_setup.jpg"  width="30%">
+
+## Infos
+
+### Camera image
+
+640x480 pGAA works (SGRBG10P) -> buffer size 384000 => 10bit raw bayer packed, 5 bytes for every 4 pixels
+First run libcamera-vid
+
+### Startup
+
+Add startx /usr/bin/thermocam to .bashrc
+
 ## Cross-Compile for RPi
 
 ### Model 1 | arm (32-bit)
@@ -32,9 +45,3 @@ cargo build --target aarch64-unknown-linux-gnu
 ```
 
 Further hints here: https://chacin.dev/blog/cross-compiling-rust-for-the-raspberry-pi
-
-
-### Startup
-
-scp target/armv7-unknown-linux-gnueabihf/release/thermocam dan@192.168.178.50:/usr/bin/thermocam
-Add startx /usr/bin/thermocam to .bashrc
