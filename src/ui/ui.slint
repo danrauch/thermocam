@@ -30,6 +30,9 @@ export component MainWindow inherits Window {
     callback manual-scale-max-temp-decreased();
     callback manual-scale-min-temp-increased();
     callback manual-scale-min-temp-decreased();
+    callback mode-decreased();
+    callback mode-increased();
+    
 
     HorizontalLayout {
         VerticalLayout { 
@@ -99,7 +102,7 @@ export component MainWindow inherits Window {
                     min-width: 0px;
                     // border-width: 0px;  
                     // border-radius: 0px;   
-                    text: "Min -";
+                    text: "Min-";
                     clicked => { manual-scale-min-temp-decreased() }
                 }
                 Button {
@@ -108,7 +111,7 @@ export component MainWindow inherits Window {
                     min-width: 0px;
                     // border-width: 0px;  
                     // border-radius: 0px;   
-                    text: "Min +";
+                    text: "Min+";
                     clicked => { manual-scale-min-temp-increased() }
                 }                
             }
@@ -119,7 +122,7 @@ export component MainWindow inherits Window {
                     min-width: 0px;
                     // border-width: 0px;  
                     // border-radius: 0px;   
-                    text: "Max -";
+                    text: "Max-";
                     clicked => { manual-scale-max-temp-decreased() }
                 }   
                 Button { 
@@ -128,8 +131,20 @@ export component MainWindow inherits Window {
                     min-width: 0px;
                     // border-width: 0px;  
                     // border-radius: 0px;   
-                    text: "Max +";
+                    text: "Max+";
                     clicked => { manual-scale-max-temp-increased() }
+                }                
+            }
+            HorizontalLayout { 
+                Button {
+                    min-width: 0px;
+                    text: "<";
+                    clicked => { mode-decreased() }
+                }   
+                Button { 
+                    min-width: 0px;
+                    text: ">";
+                    clicked => { mode-increased() }
                 }                
             }
         }

@@ -8,6 +8,7 @@ pub struct ThermoImageProcessor {
     pub manual_scale_max_temp: f32,
     pub min_temp_color: RgbColor,
     pub max_temp_color: RgbColor,
+    pub mode: u32,
 }
 
 impl ThermoImageProcessor {
@@ -19,6 +20,7 @@ impl ThermoImageProcessor {
             manual_scale_max_temp: 35.0,
             min_temp_color: RgbColor { r: 0, g: 0, b: 255 },
             max_temp_color: RgbColor { r: 255, g: 0, b: 0 },
+            mode: 0,
         }
     }
 
@@ -44,6 +46,11 @@ impl ThermoImageProcessor {
 
     pub fn with_max_temp_color(mut self, max_temp_color: RgbColor) -> Self {
         self.max_temp_color = max_temp_color;
+        self
+    }
+
+    pub fn with_mode(mut self, mode: u32) -> Self {
+        self.mode = mode;
         self
     }
 }

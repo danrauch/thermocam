@@ -1,5 +1,0 @@
-FPS: 4.0 (250 ms)
-Ambient temperature: 28.736824°C
-Min Pixel Pixel { x: 25, y: 2, value: 21.287354 }
-Max Pixel Pixel { x: 18, y: 3, value: 29.40387 }
-Mean Temp 23.34259
