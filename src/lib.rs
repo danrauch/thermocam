@@ -193,11 +193,7 @@ pub fn blend_images_of_different_sizes(
 
         // luminance greyscale
         let mut input_greyscale = 0.3 * pxi.0[0] as f32 + 0.59 * pxi.0[1] as f32 + 0.11 * pxi.0[2] as f32;
-        if input_greyscale < 0.0 {
-            input_greyscale = 255.0
-        } else if input_greyscale > 255.0 {
-            input_greyscale = 255.0
-        }
+        input_greyscale = clamp_to_u8(input_greyscale);
 
         let blended_r = (image2_sample.0[0] as f32 * foreground_alpha) + (input_greyscale * (1.0 - foreground_alpha));
         let blended_g = (image2_sample.0[1] as f32 * foreground_alpha) + (input_greyscale * (1.0 - foreground_alpha));
@@ -217,15 +213,17 @@ pub fn sgrbg10p_to_rgb(buf: &[u8], camera_image_shape: (u32, u32), cam_rgb_raw_b
     // 10-bit depth
     let mut convert_buf_idx = 0;
     for i in (0..bayer_in_buf_size as usize).step_by(5) {
-        let pix1 = (buf[i + 0] << 2 | ((buf[i + 4] >> 0) & 3)) as u16;
-        let pix2 = (buf[i + 1] << 2 | ((buf[i + 4] >> 2) & 3)) as u16;
-        let pix3 = (buf[i + 2] << 2 | ((buf[i + 4] >> 4) & 3)) as u16;
-        let pix4 = (buf[i + 3] << 2 | ((buf[i + 4] >> 6) & 3)) as u16;
+        // unpack pixels
+        let pix1 = (buf[i + 0] as u16) << 2 | ((buf[i + 4] >> 0) & 3) as u16;
+        let pix2 = (buf[i + 1] as u16) << 2 | ((buf[i + 4] >> 2) & 3) as u16;
+        let pix3 = (buf[i + 2] as u16) << 2 | ((buf[i + 4] >> 4) & 3) as u16;
+        let pix4 = (buf[i + 3] as u16) << 2 | ((buf[i + 4] >> 6) & 3) as u16;
 
-        convert_buf[convert_buf_idx + 0] = pix1 as u8;
-        convert_buf[convert_buf_idx + 1] = pix2 as u8;
-        convert_buf[convert_buf_idx + 2] = pix3 as u8;
-        convert_buf[convert_buf_idx + 3] = pix4 as u8;
+        // convert 10-bit values to 8-bit
+        convert_buf[convert_buf_idx + 0] = (pix1 as f32 / 1024.0 * 255.0) as u8;
+        convert_buf[convert_buf_idx + 1] = (pix2 as f32 / 1024.0 * 255.0) as u8;
+        convert_buf[convert_buf_idx + 2] = (pix3 as f32 / 1024.0 * 255.0) as u8;
+        convert_buf[convert_buf_idx + 3] = (pix4 as f32 / 1024.0 * 255.0) as u8;
 
         convert_buf_idx += 4;
     }
@@ -238,8 +236,7 @@ pub fn sgrbg10p_to_rgb(buf: &[u8], camera_image_shape: (u32, u32), cam_rgb_raw_b
         depth,
         cam_rgb_raw_buf,
     );
-    let cfa = bayer::CFA::GRBG;
-    // SGRBG10P
+    let cfa = bayer::CFA::GBRG; // SGRBG10P
     let alg = bayer::Demosaic::Linear;
 
     bayer::run_demosaic(
@@ -278,24 +275,9 @@ pub fn yuyv_to_rgb(yuyv_buffer: &[u8], yuyv_shape: (u32, u32), cam_rgb: &mut [u8
         let mut g = y as f32 - 0.3455 * (v - 128) as f32 - 0.7169 * (v - 128) as f32; // g1
         let mut b = y as f32 + 1.1790 * (u - 128) as f32; // b1
 
-        if r < 0.0 {
-            r = 0.0;
-        }
-        if g < 0.0 {
-            g = 0.0;
-        }
-        if b < 0.0 {
-            b = 0.0;
-        }
-        if r > 255.0 {
-            r = 255.0;
-        }
-        if g > 255.0 {
-            g = 255.0;
-        }
-        if b > 255.0 {
-            b = 255.0;
-        }
+        r = clamp_to_u8(r);
+        g = clamp_to_u8(g);
+        b = clamp_to_u8(b);
 
         cam_rgb[3 + rgb_idx_offset] = r as u8;
         cam_rgb[4 + rgb_idx_offset] = g as u8;
@@ -320,24 +302,9 @@ pub fn yuv420_to_rgb(buf: &[u8], shape: (u32, u32)) -> image::ImageBuffer<image:
             let mut g: f32 = y - 0.344 * (u - 128.0) - 0.714 * (v - 128.0);
             let mut b: f32 = y + 1.772 * (u - 128.0);
 
-            if r < 0.0 {
-                r = 0.0;
-            }
-            if g < 0.0 {
-                g = 0.0;
-            }
-            if b < 0.0 {
-                b = 0.0;
-            }
-            if r > 255.0 {
-                r = 255.0;
-            }
-            if g > 255.0 {
-                g = 255.0;
-            }
-            if b > 255.0 {
-                b = 255.0;
-            }
+            r = clamp_to_u8(r);
+            g = clamp_to_u8(g);
+            b = clamp_to_u8(b);
 
             cam_rgb[(y_coo * step + x_coo) as usize] = r as u8;
             cam_rgb[(y_coo * step + x_coo + 1) as usize] = g as u8;
@@ -346,4 +313,14 @@ pub fn yuv420_to_rgb(buf: &[u8], shape: (u32, u32)) -> image::ImageBuffer<image:
     }
     let img = image::RgbImage::from_raw(shape.0, shape.1, cam_rgb).unwrap();
     img
+}
+
+fn clamp_to_u8(value: f32) -> f32 {
+    if value < 0.0 {
+        0.0
+    } else if value > 255.0 {
+        255.0
+    } else {
+        value
+    }
 }
