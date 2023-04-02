@@ -23,6 +23,8 @@ use rgb_color::RgbColor;
 use temperature_pixel::TemperaturPixel;
 use thermo_image_processing::ThermoImageProcessor;
 
+const FACTOR_10BIT_TO_8BIT: f32 = 255.0 / 1024.0;
+
 pub fn get_thermo_image_raw_data(
     use_simulation_data: bool,
     shape: &mut (u32, u32),
@@ -63,7 +65,7 @@ pub fn get_camera_simulation_data(sim_data_buffer: &mut [u8; 384000]) {
 
 pub fn process_raw_thermo_image_data(
     mlx_sensor_data: &Vec<f32>,
-    shape: (u32, u32),
+    mlx_sensor_data_shape: (u32, u32),
     settings: &ThermoImageProcessor,
 ) -> (
     TemperaturPixel,
@@ -71,7 +73,8 @@ pub fn process_raw_thermo_image_data(
     f32,
     image::ImageBuffer<image::Rgb<u8>, Vec<u8>>,
 ) {
-    let mut img_vec: Vec<u8> = Vec::new();
+    let mut rgb_thermo_data: Vec<u8> =
+        Vec::with_capacity((3 * mlx_sensor_data_shape.0 * mlx_sensor_data_shape.1) as usize);
     let mut max_pixel = TemperaturPixel {
         x: 0,
         y: 0,
@@ -84,8 +87,8 @@ pub fn process_raw_thermo_image_data(
     };
     let mut mean_temperature = 0.0;
     for (i, &temp_in_celsius) in mlx_sensor_data.iter().enumerate() {
-        let row = i as u32 / shape.1;
-        let col = i as u32 % shape.1;
+        let row = i as u32 / mlx_sensor_data_shape.1;
+        let col = i as u32 % mlx_sensor_data_shape.1;
 
         if temp_in_celsius <= min_pixel.value {
             min_pixel.value = temp_in_celsius;
@@ -112,9 +115,10 @@ pub fn process_raw_thermo_image_data(
     for &temp_in_celsius in mlx_sensor_data.iter() {
         let fraction = normalize(min_temp, max_temp, temp_in_celsius);
         let interpolated_color = RgbColor::lerp(settings.min_temp_color, settings.max_temp_color, fraction);
-        img_vec.extend(interpolated_color.to_vec());
+        rgb_thermo_data.extend(interpolated_color.to_vec());
     }
-    let img = image::RgbImage::from_raw(shape.1, shape.0, img_vec).unwrap();
+    let img = image::RgbImage::from_raw(mlx_sensor_data_shape.1, mlx_sensor_data_shape.0, rgb_thermo_data).unwrap();
+
     let interpolation_factor = settings.interpolation_factor;
     let mut upscaled_image = image::imageops::resize(
         &img,
@@ -176,77 +180,78 @@ fn draw_cross_into_image(
     }
 }
 
-pub fn blend_images_of_different_sizes(
-    image1: image::DynamicImage,
-    image2: image::ImageBuffer<image::Rgb<u8>, Vec<u8>>,
-    foreground_alpha: f32,
-) -> image::ImageBuffer<image::Rgb<u8>, Vec<u8>> {
-    let mut blended_img = image::RgbImage::new(image1.width(), image1.height());
-    for ((x, y, pxo), pxi) in blended_img
-        .enumerate_pixels_mut()
-        .zip(image1.as_rgb8().unwrap().pixels())
-    {
-        let sample_image2_x = ((x as f32 / image1.width() as f32) * image2.width() as f32) as u32;
-        let sample_image2_y = ((y as f32 / image1.height() as f32) * image2.height() as f32) as u32;
+/// Blends two images of different sizes.
+/// The parameter foreground alpha (0.0-1.0) determines how much influence image1 has to result.
+/// Output size is determined by image1. image1 is converted to grayscale.
+pub fn blend_images_of_different_sizes(image1: &mut image::RgbImage, image2: &image::RgbImage, foreground_alpha: f32) {
+    let img1_width = image1.width() as f32;
+    let img1_height = image1.height() as f32;
+    let img2_width = image2.width() as f32;
+    let img2_height = image2.height() as f32;
+
+    for (x, y, rgb_px) in image1.enumerate_pixels_mut() {
+        let sample_image2_x = ((x as f32 / img1_width) * img2_width) as u32;
+        let sample_image2_y = ((y as f32 / img1_height) * img2_height) as u32;
 
         let image2_sample = image2.get_pixel(sample_image2_x, sample_image2_y);
 
         // luminance greyscale
-        let mut input_greyscale = 0.3 * pxi.0[0] as f32 + 0.59 * pxi.0[1] as f32 + 0.11 * pxi.0[2] as f32;
-        input_greyscale = clamp_to_u8(input_greyscale);
+        let mut image1_greyscale = 0.3 * rgb_px.0[0] as f32 + 0.59 * rgb_px.0[1] as f32 + 0.11 * rgb_px.0[2] as f32;
+        image1_greyscale = clamp_to_u8(image1_greyscale);
 
-        let blended_r = (image2_sample.0[0] as f32 * foreground_alpha) + (input_greyscale * (1.0 - foreground_alpha));
-        let blended_g = (image2_sample.0[1] as f32 * foreground_alpha) + (input_greyscale * (1.0 - foreground_alpha));
-        let blended_b = (image2_sample.0[2] as f32 * foreground_alpha) + (input_greyscale * (1.0 - foreground_alpha));
+        let blended_r = (image2_sample.0[0] as f32 * foreground_alpha) + (image1_greyscale * (1.0 - foreground_alpha));
+        let blended_g = (image2_sample.0[1] as f32 * foreground_alpha) + (image1_greyscale * (1.0 - foreground_alpha));
+        let blended_b = (image2_sample.0[2] as f32 * foreground_alpha) + (image1_greyscale * (1.0 - foreground_alpha));
 
-        pxo[0] = blended_r as u8;
-        pxo[1] = blended_g as u8;
-        pxo[2] = blended_b as u8;
+        rgb_px.0[0] = blended_r as u8;
+        rgb_px.0[1] = blended_g as u8;
+        rgb_px.0[2] = blended_b as u8;
     }
-    blended_img
 }
 
-pub fn sgrbg10p_to_rgb(buf: &[u8], camera_image_shape: (u32, u32), cam_rgb_raw_buf: &mut [u8]) {
+pub fn sgrbg10p_to_rgb(raw_camera_buffer: &[u8], camera_image_shape: (u32, u32), resulting_rgb_buffer: &mut [u8]) {
     // convert 10-bit bayer to 16 bit bayer
-    let bayer_in_buf_size = (camera_image_shape.0 * camera_image_shape.1) as f32 * 1.25;
-    let mut convert_buf = vec![0u8; bayer_in_buf_size as usize];
-    // 10-bit depth
-    let mut convert_buf_idx = 0;
-    for i in (0..bayer_in_buf_size as usize).step_by(5) {
+    let raw_camera_buffer_size = (camera_image_shape.0 * camera_image_shape.1) as usize;
+    let bayer_buffer_size = (raw_camera_buffer_size as f32 * 1.25) as usize;
+    let mut bayer_buffer = vec![0u8; bayer_buffer_size as usize];
+
+    for (raw_idx, bay_idx) in (0..bayer_buffer_size)
+        .step_by(5)
+        .zip((0..raw_camera_buffer_size).step_by(4))
+    {
         // unpack pixels
-        let pix1 = (buf[i + 0] as u16) << 2 | ((buf[i + 4] >> 0) & 3) as u16;
-        let pix2 = (buf[i + 1] as u16) << 2 | ((buf[i + 4] >> 2) & 3) as u16;
-        let pix3 = (buf[i + 2] as u16) << 2 | ((buf[i + 4] >> 4) & 3) as u16;
-        let pix4 = (buf[i + 3] as u16) << 2 | ((buf[i + 4] >> 6) & 3) as u16;
+        let raw_cam_buf_offset_4 = raw_camera_buffer[raw_idx + 4];
+        let pix1 = (raw_camera_buffer[raw_idx] as u16) << 2 | (raw_cam_buf_offset_4 & 3) as u16;
+        let pix2 = (raw_camera_buffer[raw_idx + 1] as u16) << 2 | ((raw_cam_buf_offset_4 >> 2) & 3) as u16;
+        let pix3 = (raw_camera_buffer[raw_idx + 2] as u16) << 2 | ((raw_cam_buf_offset_4 >> 4) & 3) as u16;
+        let pix4 = (raw_camera_buffer[raw_idx + 3] as u16) << 2 | ((raw_cam_buf_offset_4 >> 6) & 3) as u16;
 
         // convert 10-bit values to 8-bit
-        convert_buf[convert_buf_idx + 0] = (pix1 as f32 / 1024.0 * 255.0) as u8;
-        convert_buf[convert_buf_idx + 1] = (pix2 as f32 / 1024.0 * 255.0) as u8;
-        convert_buf[convert_buf_idx + 2] = (pix3 as f32 / 1024.0 * 255.0) as u8;
-        convert_buf[convert_buf_idx + 3] = (pix4 as f32 / 1024.0 * 255.0) as u8;
-
-        convert_buf_idx += 4;
+        bayer_buffer[bay_idx] = (pix1 as f32 * FACTOR_10BIT_TO_8BIT) as u8;
+        bayer_buffer[bay_idx + 1] = (pix2 as f32 * FACTOR_10BIT_TO_8BIT) as u8;
+        bayer_buffer[bay_idx + 2] = (pix3 as f32 * FACTOR_10BIT_TO_8BIT) as u8;
+        bayer_buffer[bay_idx + 3] = (pix4 as f32 * FACTOR_10BIT_TO_8BIT) as u8;
     }
 
     // debayer
-    let depth = bayer::RasterDepth::Depth8;
+    let raster_depth = bayer::RasterDepth::Depth8;
     let mut dst = bayer::RasterMut::new(
         camera_image_shape.0 as usize,
         camera_image_shape.1 as usize,
-        depth,
-        cam_rgb_raw_buf,
+        raster_depth,
+        resulting_rgb_buffer,
     );
-    let cfa = bayer::CFA::GBRG; // SGRBG10P
-    let alg = bayer::Demosaic::Linear;
+    let color_filter_array = bayer::CFA::GBRG; // SGRBG10P
+    let demosaic_algorithm = bayer::Demosaic::Linear;
 
     bayer::run_demosaic(
-        &mut convert_buf.as_slice(),
+        &mut bayer_buffer.as_slice(),
         bayer::BayerDepth::Depth8,
-        cfa,
-        alg,
+        color_filter_array,
+        demosaic_algorithm,
         &mut dst,
     )
-    .unwrap();
+    .unwrap()
 }
 
 pub fn yuyv_to_rgb(yuyv_buffer: &[u8], yuyv_shape: (u32, u32), cam_rgb: &mut [u8]) {

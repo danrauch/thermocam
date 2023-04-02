@@ -9,3 +9,8 @@ linker = "arm-none-linux-gnueabihf-gcc"
 # Pi 3/4 (64-bit)
 [target.aarch64-unknown-linux-gnu]
 linker = "aarch64-none-linux-gnu-gcc"
+
+# x64 with flamegraph support
+# [target.x86_64-unknown-linux-gnu]
+# linker = "/usr/bin/clang"
+# rustflags = ["-Clink-arg=-fuse-ld=lld", "-Clink-arg=-Wl,--no-rosegment"]

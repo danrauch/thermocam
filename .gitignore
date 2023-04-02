@@ -1,3 +1,6 @@
 target
 Cargo.lock
 often_used_cmds.md
+
+perf.data*
+flamegraph.svg
